@@ -18,11 +18,11 @@ export async function getUserNotifications(
   const { skip, limit: take } = parsePagination(page, limit);
 
   const [notifications, total, unreadCount] = await Promise.all([
-    NotificationModel.find({ userId: new Types.ObjectId(userId) })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(take)
-      .lean() as Promise<INotification[]>,
+   NotificationModel.find({ userId: new Types.ObjectId(userId) })
+  .sort({ createdAt: -1 })
+  .skip(skip)
+  .limit(take)
+  .lean() as unknown as Promise<INotification[]>,
     NotificationModel.countDocuments({ userId: new Types.ObjectId(userId) }),
     NotificationModel.countDocuments({ userId: new Types.ObjectId(userId), read: false }),
   ]);

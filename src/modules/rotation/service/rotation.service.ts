@@ -125,11 +125,11 @@ export async function getRotationPlan(
 
   // Get rotation history
   const history = await RotationHistoryModel.find({
-    farmId: new Types.ObjectId(farmId),
-  })
-    .sort({ seasonYear: -1 })
-    .limit(10)
-    .lean() as IRotationHistory[];
+  farmId: new Types.ObjectId(farmId),
+})
+  .sort({ seasonYear: -1 })
+  .limit(10)
+  .lean() as unknown as IRotationHistory[];
 
   if (!lastHarvested) {
     return { history, recommendation: null };

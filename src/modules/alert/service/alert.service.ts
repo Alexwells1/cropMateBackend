@@ -78,11 +78,11 @@ export async function getAllAlerts(
   const { skip, limit: take } = parsePagination(page, limit);
 
   const [alerts, total] = await Promise.all([
-    AlertModel.find()
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(take)
-      .lean() as Promise<IAlert[]>,
+   AlertModel.find()
+  .sort({ createdAt: -1 })
+  .skip(skip)
+  .limit(take)
+  .lean() as unknown as Promise<IAlert[]>,
     AlertModel.countDocuments(),
   ]);
 

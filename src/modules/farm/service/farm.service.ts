@@ -25,9 +25,9 @@ export async function getFarmsByUser(userId: string): Promise<IFarm[]> {
   const cached = await cacheGet<IFarm[]>(cacheKey);
   if (cached) return cached;
 
-  const farms = await FarmModel.find({ userId: new Types.ObjectId(userId) })
-    .sort({ createdAt: -1 })
-    .lean() as IFarm[];
+ const farms = await FarmModel.find({ userId: new Types.ObjectId(userId) })
+  .sort({ createdAt: -1 })
+  .lean() as unknown as IFarm[];
 
   await cacheSet(cacheKey, farms, 300);
   return farms;

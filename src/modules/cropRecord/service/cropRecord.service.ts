@@ -38,7 +38,7 @@ export async function getRecordsByCrop(
 ): Promise<ICropRecord[]> {
   await verifyCropAccess(cropId, userId);
 
-  return CropRecordModel.find({ cropId: new Types.ObjectId(cropId) })
-    .sort({ activityDate: -1 })
-    .lean() as Promise<ICropRecord[]>;
+ return CropRecordModel.find({ cropId: new Types.ObjectId(cropId) })
+  .sort({ activityDate: -1 })
+  .lean() as unknown as Promise<ICropRecord[]>;
 }

@@ -21,11 +21,10 @@ import notificationRoutes from "./modules/notification/routes/notification.route
 export function createApp(): Application {
   const app = express();
 
-  // ── CORS - This MUST come before any other middleware ─────────────────────
-  // Configure CORS to allow all origins
+  // ── CORS ─────────────────────────────────────────────────────────────
   app.use(
     cors({
-      origin: true, // Allow any origin
+      origin: true,
       methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
       credentials: true,
@@ -34,112 +33,123 @@ export function createApp(): Application {
     })
   );
 
-  // Add explicit CORS headers as a backup
-  app.use((req, res, next) => {
+  app.use((req, res, next): void => {
     const origin = req.headers.origin;
+
     if (origin) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader("Access-Control-Allow-Origin", origin);
     } else {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader("Access-Control-Allow-Origin", "*");
     }
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With');
-    
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-      console.log('🔐 Preflight request handled');
-      return res.sendStatus(200);
+
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin, X-Requested-With");
+
+    if (req.method === "OPTIONS") {
+      return void res.sendStatus(200);
     }
-    
+
     next();
   });
 
-  // ── 🔍 SUPER DETAILED REQUEST LOGGING (Place this AFTER CORS) ─────────────────
-  app.use((req, res, next) => {
+  // ── Request logging ─────────────────────────────────────────────────
+  app.use((req, res, next): void => {
     console.log("\n" + "=".repeat(80));
     console.log(`🕐 ${new Date().toISOString()}`);
     console.log(`📌 ${req.method} ${req.url}`);
-    console.log(`🌐 ORIGIN: "${req.headers.origin || 'No origin'}"`);
-    console.log(`📋 HEADERS:`, JSON.stringify({
-      'content-type': req.headers['content-type'],
-      'authorization': req.headers.authorization ? 'Bearer [HIDDEN]' : undefined,
-      'user-agent': req.headers['user-agent'],
-      'accept': req.headers['accept'],
-      'host': req.headers.host,
-      'referer': req.headers.referer,
-    }, null, 2));
-    
-    // Log ALL headers for debugging
+    console.log(`🌐 ORIGIN: "${req.headers.origin || "No origin"}"`);
+
+    console.log(
+      `📋 HEADERS:`,
+      JSON.stringify(
+        {
+          "content-type": req.headers["content-type"],
+          authorization: req.headers.authorization ? "Bearer [HIDDEN]" : undefined,
+          "user-agent": req.headers["user-agent"],
+          accept: req.headers["accept"],
+          host: req.headers.host,
+          referer: req.headers.referer,
+        },
+        null,
+        2
+      )
+    );
+
     console.log(`📋 ALL HEADERS:`, req.headers);
-    
-    // Capture response
-    const oldJson = res.json;
-    const oldSend = res.send;
-    const oldEnd = res.end;
-    
-    res.json = function(body) {
+
+    const oldJson = res.json.bind(res);
+    const oldSend = res.send.bind(res);
+    const oldEnd = res.end.bind(res);
+
+    res.json = (body?: any) => {
       console.log(`📤 RESPONSE ${res.statusCode}:`, body);
-      return oldJson.call(this, body);
+      return oldJson(body);
     };
-    
-    res.send = function(body) {
+
+    res.send = (body?: any) => {
       console.log(`📤 RESPONSE ${res.statusCode}:`, body);
-      return oldSend.call(this, body);
+      return oldSend(body);
     };
-    
+
+    res.end = (...args: any[]) => {
+      console.log(`📤 RESPONSE ${res.statusCode}`);
+      return oldEnd(...args);
+    };
+
     next();
   });
 
-  // ── Security ────────────────────────────────────────────────────────────────
-  app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow cross-origin requests
-  }));
+  // ── Security ────────────────────────────────────────────────────────
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    })
+  );
 
-  // Log CORS response headers after each request
-  app.use((req, res, next) => {
-    res.on('finish', () => {
+  // ── Log CORS response headers ───────────────────────────────────────
+  app.use((_req, res, next): void => {
+    res.on("finish", () => {
       console.log(`\n🔐 CORS RESPONSE HEADERS:`);
-      console.log(`   Access-Control-Allow-Origin: ${res.getHeader('access-control-allow-origin')}`);
-      console.log(`   Access-Control-Allow-Credentials: ${res.getHeader('access-control-allow-credentials')}`);
-      console.log(`   Access-Control-Allow-Methods: ${res.getHeader('access-control-allow-methods')}`);
-      console.log(`   Access-Control-Allow-Headers: ${res.getHeader('access-control-allow-headers')}`);
+      console.log(`   Access-Control-Allow-Origin: ${res.getHeader("access-control-allow-origin")}`);
+      console.log(`   Access-Control-Allow-Credentials: ${res.getHeader("access-control-allow-credentials")}`);
+      console.log(`   Access-Control-Allow-Methods: ${res.getHeader("access-control-allow-methods")}`);
+      console.log(`   Access-Control-Allow-Headers: ${res.getHeader("access-control-allow-headers")}`);
     });
     next();
   });
 
-  // ── Body parsers ────────────────────────────────────────────────────────────
+  // ── Body parsers ────────────────────────────────────────────────────
   app.use(express.json({ limit: "5mb" }));
   app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
-  // ── Log request body for non-file uploads ───────────────────────────────────
-  app.use((req, res, next) => {
+  // ── Log request body ────────────────────────────────────────────────
+  app.use((req, _res, next): void => {
     if (req.body && Object.keys(req.body).length > 0) {
       console.log(`📦 REQUEST BODY:`, req.body);
     }
     next();
   });
 
-  // ── Single morgan logger ───────────────────────────────────────────────────
+  // ── Morgan logger ───────────────────────────────────────────────────
   if (!config.server.isTest) {
     app.use(
       morgan("dev", {
-        stream: { 
+        stream: {
           write: (msg: string) => {
             console.log(`📝 MORGAN: ${msg.trim()}`);
             logger.http(msg.trim());
-          }
+          },
         },
-      }),
+      })
     );
   }
 
-  // ── Rate limiting (global) ──────────────────────────────────────────────────
+  // ── Rate limiting ──────────────────────────────────────────────────
   app.use(rateLimiter);
 
-  // ── Health check ────────────────────────────────────────────────────────────
+  // ── Health check ───────────────────────────────────────────────────
   app.get("/health", (_req: Request, res: Response) => {
-    console.log("❤️ Health check called");
     res.status(200).json({
       success: true,
       service: "CropMate API",
@@ -149,22 +159,9 @@ export function createApp(): Application {
     });
   });
 
-  // ── Log all registered routes (for debugging) ───────────────────────────────
+  // ── Routes ─────────────────────────────────────────────────────────
   const base = `/api/${config.server.apiVersion}`;
-  console.log("\n🗺️  REGISTERED ROUTES:");
-  console.log(`   Base path: ${base}`);
-  console.log(`   Auth: ${base}/auth`);
-  console.log(`   Farms: ${base}/farms`);
-  console.log(`   Crops: ${base}/crops`);
-  console.log(`   Records: ${base}/records`);
-  console.log(`   Disease Detection: ${base}/detect-disease`);
-  console.log(`   Soil: ${base}/soil`);
-  console.log(`   Alerts: ${base}/alerts`);
-  console.log(`   Rotation: ${base}/rotation`);
-  console.log(`   Notifications: ${base}/notifications`);
-  console.log("=".repeat(80) + "\n");
 
-  // ── API routes ──────────────────────────────────────────────────────────────
   app.use(`${base}/auth`, authRoutes);
   app.use(`${base}/farms`, farmRoutes);
   app.use(`${base}/crops`, cropRoutes);
@@ -175,12 +172,12 @@ export function createApp(): Application {
   app.use(`${base}/rotation`, rotationRoutes);
   app.use(`${base}/notifications`, notificationRoutes);
 
-  // ── 404 handler with logging ────────────────────────────────────────────────
-  app.use((req, res, next) => {
+  // ── 404 ────────────────────────────────────────────────────────────
+  app.use((req, _res, next): void => {
     console.log(`❌ 404 Not Found: ${req.method} ${req.url}`);
     next();
   });
-  
+
   app.use(notFoundHandler);
   app.use(globalErrorHandler);
 
