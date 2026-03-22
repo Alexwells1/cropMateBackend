@@ -3,8 +3,10 @@
 //
 // Schema changes:
 //   clientId — optional frontend-generated idempotency key.
-//   Sparse unique index on (userId, clientId) prevents duplicate
-//   farms when FARM_CREATE is retried after a lost response.
+//     Partial unique index on (userId, clientId) prevents duplicate
+//     farms when FARM_CREATE is retried after a lost response.
+//     Uses partialFilterExpression instead of sparse: true — same
+//     reason as crop.model: multiple farms with no clientId are valid.
 // ============================================================
 
 import { Schema, model } from 'mongoose';
@@ -35,7 +37,7 @@ const farmSchema = new Schema<IFarmWithClientId>(
       min: [0.01, 'Farm size must be positive'],
     },
     location: {
-      latitude: { type: Number, required: true, min: -90, max: 90 },
+      latitude:  { type: Number, required: true, min: -90,  max: 90  },
       longitude: { type: Number, required: true, min: -180, max: 180 },
     },
     soilType: {
@@ -57,10 +59,14 @@ const farmSchema = new Schema<IFarmWithClientId>(
 
 farmSchema.index({ 'location.latitude': 1, 'location.longitude': 1 });
 
-// Sparse unique index: (userId, clientId) — only applies when clientId is set.
+// Partial unique index: only enforced when clientId is present.
 farmSchema.index(
   { userId: 1, clientId: 1 },
-  { unique: true, sparse: true, name: 'userId_clientId_farm_unique' }
+  {
+    unique: true,
+    partialFilterExpression: { clientId: { $exists: true, $type: 'string' } },
+    name: 'userId_clientId_farm_unique',
+  }
 );
 
 export const FarmModel = model<IFarmWithClientId>('Farm', farmSchema);

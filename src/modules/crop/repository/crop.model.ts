@@ -3,10 +3,11 @@
 //
 // Schema changes:
 //   clientId — optional frontend-generated idempotency key.
-//     Sparse unique index on (farmId, clientId) prevents duplicate
+//     Partial unique index on (farmId, clientId) prevents duplicate
 //     crops when CROP_CREATE is retried after a lost response.
-//     Documents without clientId are excluded from the uniqueness
-//     constraint (sparse: true).
+//     Uses partialFilterExpression instead of sparse: true so that
+//     only documents where clientId EXISTS are included — multiple
+//     documents with no clientId on the same farm are allowed.
 // ============================================================
 
 import { Schema, model } from 'mongoose';
@@ -48,8 +49,6 @@ const cropSchema = new Schema<ICropWithClientId>(
     expectedHarvestDate: {
       type: Date,
     },
-    // Optional client-generated idempotency key.
-    // Prevents duplicate crops when CROP_CREATE is retried.
     clientId: {
       type: String,
       index: true,
@@ -65,12 +64,15 @@ const cropSchema = new Schema<ICropWithClientId>(
 cropSchema.index({ farmId: 1, status: 1 });
 cropSchema.index({ farmId: 1, createdAt: -1 });
 
-// Partial unique index: (farmId, clientId) must be unique when clientId is set.
+// Partial unique index: only enforced when clientId is present.
+// Unlike sparse: true, partialFilterExpression with $exists guarantees
+// that documents without clientId (null or missing) are excluded entirely,
+// so multiple seed/API crops on the same farm never conflict.
 cropSchema.index(
   { farmId: 1, clientId: 1 },
   {
     unique: true,
-    sparse: true,
+    partialFilterExpression: { clientId: { $exists: true, $type: 'string' } },
     name: 'farmId_clientId_unique',
   }
 );

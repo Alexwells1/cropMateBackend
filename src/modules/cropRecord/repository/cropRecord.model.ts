@@ -71,7 +71,7 @@ cropRecordSchema.index(
   { cropId: 1, clientId: 1 },
   {
     unique: true,
-    sparse: true,
+    partialFilterExpression: { clientId: { $exists: true, $type: 'string' } },
     name: 'cropId_clientId_unique',
   }
 );
