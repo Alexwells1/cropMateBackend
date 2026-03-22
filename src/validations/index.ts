@@ -33,6 +33,9 @@ export const loginSchema = z.object({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FARM
+// clientId: optional frontend-generated local ID used for idempotent creates.
+// When present the backend uses findOneAndUpdate+upsert to prevent duplicates
+// on retry. Max 100 chars covers "local_<timestamp>_<random>" format.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const createFarmSchema = z.object({
@@ -64,10 +67,12 @@ export const createFarmSchema = z.object({
       }),
     })
     .default('Unknown'),
+  clientId: z.string().max(100).trim().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CROP
+// clientId: same idempotency purpose as farm.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const createCropSchema = z.object({
@@ -93,6 +98,7 @@ export const createCropSchema = z.object({
     .string()
     .refine((d) => !isNaN(Date.parse(d)), 'expectedHarvestDate must be a valid date')
     .optional(),
+  clientId: z.string().max(100).trim().optional(),
 });
 
 export const updateCropSchema = z.object({
@@ -107,6 +113,7 @@ export const updateCropSchema = z.object({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CROP RECORD
+// clientId: idempotency key for RECORD_LOG retry safety.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const logActivitySchema = z.object({
@@ -126,6 +133,7 @@ export const logActivitySchema = z.object({
   activityDate: z
     .string({ required_error: 'Activity date is required' })
     .refine((d) => !isNaN(Date.parse(d)), 'activityDate must be a valid date string'),
+  clientId: z.string().max(100).trim().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,10 +157,10 @@ export const paginationSchema = z.object({
 // INFERRED TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type RegisterInput = z.infer<typeof registerSchema>;
-export type LoginInput = z.infer<typeof loginSchema>;
-export type CreateFarmInput = z.infer<typeof createFarmSchema>;
-export type CreateCropInput = z.infer<typeof createCropSchema>;
-export type UpdateCropInput = z.infer<typeof updateCropSchema>;
-export type LogActivityInput = z.infer<typeof logActivitySchema>;
-export type PaginationInput = z.infer<typeof paginationSchema>;
+export type RegisterInput     = z.infer<typeof registerSchema>;
+export type LoginInput        = z.infer<typeof loginSchema>;
+export type CreateFarmInput   = z.infer<typeof createFarmSchema>;
+export type CreateCropInput   = z.infer<typeof createCropSchema>;
+export type UpdateCropInput   = z.infer<typeof updateCropSchema>;
+export type LogActivityInput  = z.infer<typeof logActivitySchema>;
+export type PaginationInput   = z.infer<typeof paginationSchema>;

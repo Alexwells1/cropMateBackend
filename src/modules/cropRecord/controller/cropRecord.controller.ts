@@ -1,10 +1,17 @@
+// ============================================================
+// CropMate - CropRecord Controller
+//
+// Change: passes clientId from request body to logActivity service
+// so idempotent retry is supported for RECORD_LOG actions.
+// ============================================================
+
 import { Request, Response, NextFunction } from 'express';
 import * as recordService from '../service/cropRecord.service';
 import { sendSuccess, sendCreated } from '../../../utils/response';
 import { LogActivityInput } from '../../../validations';
 
 export async function logActivity(
-  req: Request<Record<string, never>, unknown, LogActivityInput>,
+  req: Request<Record<string, never>, unknown, LogActivityInput & { clientId?: string }>,
   res: Response,
   next: NextFunction
 ): Promise<void> {

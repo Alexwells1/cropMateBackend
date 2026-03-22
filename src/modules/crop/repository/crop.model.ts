@@ -1,7 +1,22 @@
+// ============================================================
+// CropMate - Crop Model
+//
+// Schema changes:
+//   clientId — optional frontend-generated idempotency key.
+//     Sparse unique index on (farmId, clientId) prevents duplicate
+//     crops when CROP_CREATE is retried after a lost response.
+//     Documents without clientId are excluded from the uniqueness
+//     constraint (sparse: true).
+// ============================================================
+
 import { Schema, model } from 'mongoose';
 import { ICrop } from '../../../types';
 
-const cropSchema = new Schema<ICrop>(
+export interface ICropWithClientId extends ICrop {
+  clientId?: string;
+}
+
+const cropSchema = new Schema<ICropWithClientId>(
   {
     farmId: {
       type: Schema.Types.ObjectId,
@@ -33,6 +48,13 @@ const cropSchema = new Schema<ICrop>(
     expectedHarvestDate: {
       type: Date,
     },
+    // Optional client-generated idempotency key.
+    // Prevents duplicate crops when CROP_CREATE is retried.
+    clientId: {
+      type: String,
+      index: true,
+      sparse: true,
+    },
   },
   {
     timestamps: true,
@@ -43,4 +65,14 @@ const cropSchema = new Schema<ICrop>(
 cropSchema.index({ farmId: 1, status: 1 });
 cropSchema.index({ farmId: 1, createdAt: -1 });
 
-export const CropModel = model<ICrop>('Crop', cropSchema);
+// Partial unique index: (farmId, clientId) must be unique when clientId is set.
+cropSchema.index(
+  { farmId: 1, clientId: 1 },
+  {
+    unique: true,
+    sparse: true,
+    name: 'farmId_clientId_unique',
+  }
+);
+
+export const CropModel = model<ICropWithClientId>('Crop', cropSchema);

@@ -1,7 +1,26 @@
+// ============================================================
+// CropMate - CropRecord Model
+//
+// Schema changes:
+//   clientId — optional frontend-generated idempotency key.
+//
+//   Idempotency strategy for records is different from farms/crops.
+//   Records do not have a natural surrogate key visible to the client
+//   before the server assigns _id, so we use the frontend's localId
+//   as clientId, stored in a sparse unique index on (cropId, clientId).
+//
+//   A retry with the same clientId returns the existing record.
+//   Records without clientId (direct API calls) are not deduplicated.
+// ============================================================
+
 import { Schema, model } from 'mongoose';
 import { ICropRecord } from '../../../types';
 
-const cropRecordSchema = new Schema<ICropRecord>(
+export interface ICropRecordWithClientId extends ICropRecord {
+  clientId?: string;
+}
+
+const cropRecordSchema = new Schema<ICropRecordWithClientId>(
   {
     cropId: {
       type: Schema.Types.ObjectId,
@@ -30,6 +49,12 @@ const cropRecordSchema = new Schema<ICropRecord>(
       required: [true, 'Activity date is required'],
       default: Date.now,
     },
+    // Optional client-generated idempotency key (frontend's localId).
+    clientId: {
+      type: String,
+      index: true,
+      sparse: true,
+    },
   },
   {
     timestamps: true,
@@ -40,4 +65,15 @@ const cropRecordSchema = new Schema<ICropRecord>(
 cropRecordSchema.index({ cropId: 1, activityDate: -1 });
 cropRecordSchema.index({ cropId: 1, activityType: 1 });
 
-export const CropRecordModel = model<ICropRecord>('CropRecord', cropRecordSchema);
+// Sparse unique index: (cropId, clientId) must be unique when clientId is set.
+// Prevents duplicate records when RECORD_LOG is retried.
+cropRecordSchema.index(
+  { cropId: 1, clientId: 1 },
+  {
+    unique: true,
+    sparse: true,
+    name: 'cropId_clientId_unique',
+  }
+);
+
+export const CropRecordModel = model<ICropRecordWithClientId>('CropRecord', cropRecordSchema);

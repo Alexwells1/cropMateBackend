@@ -1,7 +1,20 @@
+// ============================================================
+// CropMate - Farm Model
+//
+// Schema changes:
+//   clientId — optional frontend-generated idempotency key.
+//   Sparse unique index on (userId, clientId) prevents duplicate
+//   farms when FARM_CREATE is retried after a lost response.
+// ============================================================
+
 import { Schema, model } from 'mongoose';
 import { IFarm } from '../../../types';
 
-const farmSchema = new Schema<IFarm>(
+export interface IFarmWithClientId extends IFarm {
+  clientId?: string;
+}
+
+const farmSchema = new Schema<IFarmWithClientId>(
   {
     userId: {
       type: Schema.Types.ObjectId,
@@ -22,23 +35,18 @@ const farmSchema = new Schema<IFarm>(
       min: [0.01, 'Farm size must be positive'],
     },
     location: {
-      latitude: {
-        type: Number,
-        required: [true, 'Latitude is required'],
-        min: -90,
-        max: 90,
-      },
-      longitude: {
-        type: Number,
-        required: [true, 'Longitude is required'],
-        min: -180,
-        max: 180,
-      },
+      latitude: { type: Number, required: true, min: -90, max: 90 },
+      longitude: { type: Number, required: true, min: -180, max: 180 },
     },
     soilType: {
       type: String,
       enum: ['Loamy', 'Sandy', 'Clay', 'Silty', 'Peaty', 'Chalky', 'Unknown'],
       default: 'Unknown',
+    },
+    clientId: {
+      type: String,
+      index: true,
+      sparse: true,
     },
   },
   {
@@ -49,4 +57,10 @@ const farmSchema = new Schema<IFarm>(
 
 farmSchema.index({ 'location.latitude': 1, 'location.longitude': 1 });
 
-export const FarmModel = model<IFarm>('Farm', farmSchema);
+// Sparse unique index: (userId, clientId) — only applies when clientId is set.
+farmSchema.index(
+  { userId: 1, clientId: 1 },
+  { unique: true, sparse: true, name: 'userId_clientId_farm_unique' }
+);
+
+export const FarmModel = model<IFarmWithClientId>('Farm', farmSchema);

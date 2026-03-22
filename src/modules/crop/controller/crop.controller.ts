@@ -1,10 +1,17 @@
+// ============================================================
+// CropMate - Crop Controller
+//
+// Change: passes clientId from request body to createCrop service
+// so idempotent retry is supported for CROP_CREATE actions.
+// ============================================================
+
 import { Request, Response, NextFunction } from 'express';
 import * as cropService from '../service/crop.service';
 import { sendSuccess, sendCreated } from '../../../utils/response';
 import { CreateCropInput, UpdateCropInput } from '../../../validations';
 
 export async function createCrop(
-  req: Request<Record<string, never>, unknown, CreateCropInput>,
+  req: Request<Record<string, never>, unknown, CreateCropInput & { clientId?: string }>,
   res: Response,
   next: NextFunction
 ): Promise<void> {

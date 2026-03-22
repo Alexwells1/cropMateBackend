@@ -1,3 +1,26 @@
+// ============================================================
+// CropMate - DiseaseDetection Controller
+//
+// Phase 2 fix — response shape consistency:
+//   detectDisease now returns the FULL detection object with all
+//   fields the frontend needs for offline storage:
+//     _id, cropId, farmId, userId, imageUrl, detectedDisease,
+//     confidenceScore (number 0-1), severity, isHealthy,
+//     treatment, preventionAdvice, detectedAt, createdAt, updatedAt
+//
+//   Previously the controller returned a custom DTO that:
+//     - Used 'detectionId' instead of '_id' (breaking upsertDetections)
+//     - Returned confidence as string "91%" instead of number 0.91
+//     - Omitted cropId, farmId, createdAt, updatedAt
+//
+//   The frontend disease.service.ts normalised the old shape.
+//   After this fix the frontend service no longer needs that workaround —
+//   it receives a shape that directly matches IDiseaseDetection.
+//
+//   NOTE: The frontend disease.service.ts is updated in Phase 7 to
+//   consume the new shape directly.
+// ============================================================
+
 import { Request, Response, NextFunction } from 'express';
 import * as detectionService from '../service/diseaseDetection.service';
 import { sendCreated, sendSuccess, sendError } from '../../../utils/response';
@@ -11,7 +34,11 @@ export async function detectDisease(
 ): Promise<void> {
   try {
     if (!req.file) {
-      sendError(res, 'A crop image file is required. Send as multipart/form-data with field name "image".', 400);
+      sendError(
+        res,
+        'A crop image file is required. Send as multipart/form-data with field name "image".',
+        400
+      );
       return;
     }
 
@@ -21,23 +48,21 @@ export async function detectDisease(
       return;
     }
 
+    // clientId is the frontend's localDetectionId — used for idempotency
+    const clientId = req.body['clientId'] as string | undefined;
+
     const detection = await detectionService.runDiseaseDetection(
       cropId.trim(),
       req.user!.userId,
-      req.file.buffer
+      req.file.buffer,
+      clientId?.trim()
     );
 
-    sendCreated(res, 'Disease detection completed.', {
-      detectionId: detection._id,
-      disease: detection.detectedDisease,
-      confidence: `${Math.round(detection.confidenceScore * 100)}%`,
-      isHealthy: detection.isHealthy,
-      severity: detection.severity,
-      treatment: detection.treatment,
-      preventionAdvice: detection.preventionAdvice,
-      imageUrl: detection.imageUrl,
-      detectedAt: detection.detectedAt,
-    });
+    // Phase 2: return the full detection object.
+    // The frontend's upsertDetections() needs every field present.
+    // confidenceScore remains a number (0-1) — the frontend formats
+    // it as a percentage for display.
+    sendCreated(res, 'Disease detection completed.', detection);
   } catch (err) {
     next(err);
   }
@@ -54,7 +79,9 @@ export async function getDetectionById(
       sendError(res, 'Detection not found.', 404);
       return;
     }
-    sendSuccess(res, 'Detection retrieved.', detection);
+    // Serialize before sending so timestamps are ISO strings
+    const { serializeDetection } = await import('../service/diseaseDetection.service');
+    sendSuccess(res, 'Detection retrieved.', serializeDetection(detection));
   } catch (err) {
     next(err);
   }
