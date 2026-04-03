@@ -1,19 +1,27 @@
 // ============================================================
-// CropMate - DiseaseDetection Model
+// CropMate — DiseaseDetection Model
 //
-// Schema changes:
-//   clientId — optional frontend-generated idempotency key.
+// Index notes
+// ───────────
+// Sparse unique (userId, clientId):
+//   clientId is a frontend-generated idempotency key (localDetectionId).
+//   The service checks for an existing record with this key BEFORE
+//   uploading to Cloudinary, so duplicate retries are short-circuited
+//   before the expensive upload happens.
 //
-//   Detection idempotency works differently from farms/crops:
-//   the image is uploaded to Cloudinary before the DB insert,
-//   so a naive retry would upload the image twice. The clientId
-//   index lets the service check for an existing detection with
-//   the same key BEFORE uploading to Cloudinary, short-circuiting
-//   the expensive pipeline entirely on a retry.
+//   Sparse = rows without clientId are excluded from the unique constraint,
+//   so older detections recorded without a clientId never conflict.
 //
-//   Index: sparse unique on (userId, clientId).
-//   userId is included so two users can independently scan the
-//   same crop without colliding on clientId.
+// IMPORTANT — first deploy:
+//   The old index "userId_clientId_detecton..." (corrupted name) must be
+//   dropped manually before starting the server, otherwise Mongoose will
+//   error on startup trying to create the new index.
+//
+//   In mongosh:
+//     use <your-db>
+//     db.diseasedetections.getIndexes()          // find the corrupted name
+//     db.diseasedetections.dropIndex("<name>")   // drop it
+//   Then restart — Mongoose will recreate it with the correct name below.
 // ============================================================
 
 import { Schema, model } from 'mongoose';
@@ -25,6 +33,7 @@ export interface IDiseaseDetectionWithClientId extends IDiseaseDetection {
 
 const diseaseDetectionSchema = new Schema<IDiseaseDetectionWithClientId>(
   {
+    // ── Relations ──────────────────────────────────────────
     cropId: {
       type: Schema.Types.ObjectId,
       ref: 'Crop',
@@ -41,79 +50,89 @@ const diseaseDetectionSchema = new Schema<IDiseaseDetectionWithClientId>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'userId is required'],
+      index: true,
     },
+
+    // ── Image ──────────────────────────────────────────────
     imageUrl: {
-      type: String,
+      type:     String,
       required: [true, 'imageUrl is required'],
     },
     publicId: {
-      type: String,
+      type:     String,
       required: [true, 'publicId is required'],
     },
+
+    // ── AI result ──────────────────────────────────────────
     detectedDisease: {
-      type: String,
+      type:     String,
       required: [true, 'detectedDisease is required'],
-      trim: true,
+      trim:     true,
     },
     confidenceScore: {
-      type: Number,
+      type:     Number,
       required: [true, 'confidenceScore is required'],
-      min: 0,
-      max: 1,
+      min:      0,
+      max:      1,
     },
     treatment: {
-      type: String,
+      type:     String,
       required: [true, 'treatment is required'],
-      trim: true,
+      trim:     true,
     },
     preventionAdvice: {
-      type: String,
+      type:     String,
       required: [true, 'preventionAdvice is required'],
-      trim: true,
+      trim:     true,
     },
     severity: {
-      type: String,
-      enum: ['low', 'medium', 'high'],
+      type:     String,
+      enum:     ['low', 'medium', 'high'],
       required: true,
     },
     isHealthy: {
-      type: Boolean,
+      type:     Boolean,
       required: true,
-      default: false,
+      default:  false,
     },
+
+    // ── Timestamps ─────────────────────────────────────────
     detectedAt: {
-      type: Date,
+      type:    Date,
       default: Date.now,
     },
-    // Optional client-generated idempotency key (frontend's localDetectionId).
-    // Prevents duplicate Cloudinary uploads + DB inserts on SCAN_UPLOAD retry.
+
+    // ── Idempotency ────────────────────────────────────────
+    // Optional client-generated key (frontend's localDetectionId).
+    // Prevents duplicate Cloudinary uploads on SCAN_UPLOAD retry.
     clientId: {
-      type: String,
-      index: true,
-      sparse: true,
+      type:   String,
+      sparse: true,  // null/undefined rows excluded from unique index
     },
   },
   {
     timestamps: true,
     versionKey: false,
-  }
+  },
 );
 
+// ── Compound query indexes ──────────────────────────────────
 diseaseDetectionSchema.index({ farmId: 1, detectedAt: -1 });
 diseaseDetectionSchema.index({ cropId: 1, detectedAt: -1 });
-diseaseDetectionSchema.index({ userId: 1 });
 
-// Sparse unique on (userId, clientId) — prevents duplicate uploads on retry.
+// ── Idempotency index ───────────────────────────────────────
+// Sparse: skips documents where clientId is null/undefined.
+// Name is explicit so it is stable across schema rebuilds.
 diseaseDetectionSchema.index(
   { userId: 1, clientId: 1 },
   {
     unique: true,
     sparse: true,
-    name: 'userId_clientId_detection_unique',
-  }
+    name:   'userId_clientId_detection_unique',
+  },
 );
 
 export const DiseaseDetectionModel = model<IDiseaseDetectionWithClientId>(
   'DiseaseDetection',
-  diseaseDetectionSchema
+  diseaseDetectionSchema,
 );

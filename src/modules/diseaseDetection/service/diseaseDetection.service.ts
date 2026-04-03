@@ -1,22 +1,3 @@
-// ============================================================
-// CropMate - DiseaseDetection Service
-//
-// Phase 1 — Idempotency for SCAN_UPLOAD retry:
-//   runDiseaseDetection accepts an optional clientId. When present,
-//   the service checks for an existing detection with (userId, clientId)
-//   BEFORE uploading to Cloudinary or calling the AI service.
-//   A retry returns the existing detection immediately — no duplicate
-//   Cloudinary upload, no duplicate AI inference call, no duplicate DB row.
-//
-// Phase 2 — Response shape consistency:
-//   The service now returns the full IDiseaseDetection document.
-//   The controller is responsible for shaping the response.
-//   confidenceScore is kept as a number (0–1); the controller formats
-//   it as a percentage string for display if needed.
-//
-// Phase 6 — Timestamp consistency:
-//   serializeDetection() converts all Date fields to ISO strings.
-// ============================================================
 
 import { Types } from 'mongoose';
 import { DiseaseDetectionModel } from '../repository/diseaseDetection.model';
@@ -35,31 +16,27 @@ import logger from '../../../infrastructure/logger';
 export function serializeDetection(doc: any): IDiseaseDetection {
   return {
     ...doc,
-    _id: doc._id?.toString() ?? doc._id,
-    cropId: doc.cropId?.toString() ?? doc.cropId,
-    farmId: doc.farmId?.toString() ?? doc.farmId,
-    userId: doc.userId?.toString() ?? doc.userId,
-    detectedAt: doc.detectedAt instanceof Date
-      ? doc.detectedAt.toISOString()
-      : doc.detectedAt,
-    createdAt: doc.createdAt instanceof Date
-      ? doc.createdAt.toISOString()
-      : doc.createdAt,
-    updatedAt: doc.updatedAt instanceof Date
-      ? doc.updatedAt.toISOString()
-      : doc.updatedAt,
+    _id:        doc._id?.toString()    ?? doc._id,
+    cropId:     doc.cropId?.toString() ?? doc.cropId,
+    farmId:     doc.farmId?.toString() ?? doc.farmId,
+    userId:     doc.userId?.toString() ?? doc.userId,
+    detectedAt: doc.detectedAt instanceof Date ? doc.detectedAt.toISOString() : doc.detectedAt,
+    createdAt:  doc.createdAt instanceof Date  ? doc.createdAt.toISOString()  : doc.createdAt,
+    updatedAt:  doc.updatedAt instanceof Date  ? doc.updatedAt.toISOString()  : doc.updatedAt,
   } as unknown as IDiseaseDetection;
 }
 
 export async function runDiseaseDetection(
-  cropId: string,
-  userId: string,
+  cropId:      string,
+  userId:      string,
   imageBuffer: Buffer,
-  clientId?: string
+  clientId?:   string,          // undefined = no idempotency key, never null
 ): Promise<IDiseaseDetection> {
-  // ── Idempotency check ─────────────────────────────────────
-  // If clientId is provided and a detection already exists for this
-  // (userId, clientId) pair, return it immediately — no upload, no AI call.
+
+  // ── Idempotency check ──────────────────────────────────────
+  // Only run when clientId is a non-empty string.
+  // null / undefined both skip this block — clientId will then be
+  // omitted from the insert so the sparse index is never triggered.
   if (clientId) {
     const existing = await DiseaseDetectionModel.findOne({
       userId: new Types.ObjectId(userId),
@@ -84,45 +61,47 @@ export async function runDiseaseDetection(
   logger.info(`[Detection] Uploading image for crop: ${cropId}`);
   const uploaded = await uploadImageBuffer(imageBuffer, 'cropmate/detections');
 
-  // 3. Call AI service
+  // 3. Call AI service — pass buffer so Gradio receives base64 directly,
+  //    no second Cloudinary fetch needed.
   const cropName = crop.cropName;
   logger.info(`[Detection] Calling AI service — image: ${uploaded.url}, crop: ${cropName}`);
   const aiResult = await detectDisease(uploaded.url, cropName, imageBuffer);
 
-  // 4. Persist result — include clientId if provided
-  const detectionData: any = {
-    cropId: new Types.ObjectId(cropId),
-    farmId: farm._id,
-    userId: new Types.ObjectId(userId),
-    imageUrl: uploaded.url,
-    publicId: uploaded.publicId,
-    detectedDisease: aiResult.disease,
-    confidenceScore: aiResult.confidence,
-    treatment: aiResult.treatment,
+  // 4. Persist result
+  //    IMPORTANT: clientId is spread in only when it is a truthy string.
+  //    Storing null would make the sparse unique index treat every
+  //    null-clientId row as a duplicate of each other.
+  const detection = await DiseaseDetectionModel.create({
+    cropId:           new Types.ObjectId(cropId),
+    farmId:           farm._id,
+    userId:           new Types.ObjectId(userId),
+    imageUrl:         uploaded.url,
+    publicId:         uploaded.publicId,
+    detectedDisease:  aiResult.disease,
+    confidenceScore:  aiResult.confidence,
+    treatment:        aiResult.treatment,
     preventionAdvice: aiResult.preventionAdvice,
-    severity: aiResult.severity,
-    isHealthy: aiResult.isHealthy,
-    detectedAt: new Date(),
-  };
+    severity:         aiResult.severity,
+    isHealthy:        aiResult.isHealthy,
+    detectedAt:       new Date(),
+    // ↓ Field is omitted entirely when clientId is falsy —
+    //   sparse index only skips absent fields, not null ones.
+    ...(clientId ? { clientId } : {}),
+  });
 
-  if (clientId) {
-    detectionData.clientId = clientId;
-  }
-
-  const detection = await DiseaseDetectionModel.create(detectionData);
   logger.info(`[Detection] Saved: ${detection._id} — ${aiResult.disease}`);
 
   // 5. Emit outbreak event (non-blocking)
   if (!aiResult.isHealthy && aiResult.disease !== 'Unrecognised / Low Confidence') {
     const payload: DiseaseDetectedPayload = {
       detectionId: detection._id.toString(),
-      farmId: farm._id.toString(),
+      farmId:      farm._id.toString(),
       cropId,
       userId,
       diseaseName: aiResult.disease,
-      severity: aiResult.severity,
+      severity:    aiResult.severity,
       location: {
-        latitude: farm.location.latitude,
+        latitude:  farm.location.latitude,
         longitude: farm.location.longitude,
       },
     };
@@ -134,7 +113,7 @@ export async function runDiseaseDetection(
 
 export async function getDetectionsByFarm(
   farmId: string,
-  userId: string
+  userId: string,
 ): Promise<IDiseaseDetection[]> {
   await verifyFarmOwnership(farmId, userId);
 
@@ -148,7 +127,7 @@ export async function getDetectionsByFarm(
 
 export async function getDetectionsByCrop(
   cropId: string,
-  userId: string
+  userId: string,
 ): Promise<IDiseaseDetection[]> {
   if (!Types.ObjectId.isValid(cropId)) throw new AppError('Invalid crop ID.', 400);
 
