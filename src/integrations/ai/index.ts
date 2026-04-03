@@ -1,6 +1,5 @@
 import { Client } from '@gradio/client';
 import axios, { AxiosError } from 'axios';
-import { config } from '../../config';
 import logger from '../../infrastructure/logger';
 
 export interface AIDetectionResult {
